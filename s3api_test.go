@@ -11,7 +11,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/jarxorg/wfs"
+	"github.com/mojatter/wfs"
 )
 
 func TestGetObject(t *testing.T) {

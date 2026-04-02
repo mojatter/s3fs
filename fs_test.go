@@ -6,10 +6,10 @@ import (
 	"testing/fstest"
 
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/jarxorg/wfs"
-	"github.com/jarxorg/wfs/memfs"
-	"github.com/jarxorg/wfs/osfs"
-	"github.com/jarxorg/wfs/wfstest"
+	"github.com/mojatter/wfs"
+	"github.com/mojatter/wfs/memfs"
+	"github.com/mojatter/wfs/osfs"
+	"github.com/mojatter/wfs/wfstest"
 )
 
 func newMemFSTest() (*memfs.MemFS, error) {

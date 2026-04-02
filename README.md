@@ -1,9 +1,9 @@
-# github.com/jarxorg/s3fs
+# github.com/mojatter/s3fs
 
-[![PkgGoDev](https://pkg.go.dev/badge/github.com/jarxorg/s3fs)](https://pkg.go.dev/github.com/jarxorg/s3fs)
-[![Report Card](https://goreportcard.com/badge/github.com/jarxorg/s3fs)](https://goreportcard.com/report/github.com/jarxorg/s3fs)
+[![PkgGoDev](https://pkg.go.dev/badge/github.com/mojatter/s3fs)](https://pkg.go.dev/github.com/mojatter/s3fs)
+[![Report Card](https://goreportcard.com/badge/github.com/mojatter/s3fs)](https://goreportcard.com/report/github.com/mojatter/s3fs)
 
-Package s3fs provides an implementation of [wfs](https://github.com/jarxorg/wfs) for S3.
+Package s3fs provides an implementation of [wfs](https://github.com/mojatter/wfs) for S3.
 
 ## Examples
 
@@ -17,7 +17,7 @@ import (
   "io/fs"
   "log"
 
-  "github.com/jarxorg/s3fs"
+  "github.com/mojatter/s3fs"
 )
 
 func main() {
@@ -41,8 +41,8 @@ import (
   "io/fs"
   "log"
 
-  "github.com/jarxorg/wfs"
-  "github.com/jarxorg/s3fs"
+  "github.com/mojatter/wfs"
+  "github.com/mojatter/s3fs"
 )
 
 func main() {
@@ -61,7 +61,7 @@ S3FS can pass TestFS in "testing/fstest".
 ```go
 import (
   "testing/fstest"
-  "github.com/jarxorg/s3fs"
+  "github.com/mojatter/s3fs"
 )
 
 // ...
