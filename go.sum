@@ -6,10 +6,8 @@ github.com/jmespath/go-jmespath v0.4.0 h1:BEgLn5cpjn8UN1mAw4NjwDrS35OdebyEtFe+9Y
 github.com/jmespath/go-jmespath v0.4.0/go.mod h1:T8mJZnbsbmF+m6zOOFylbeCJqk5+pHWvzYPziyZiYoo=
 github.com/jmespath/go-jmespath/internal/testify v1.5.1 h1:shLQSRRSCCPj3f2gpwzGwWFoC7ycTf1rcQZHOlsJ6N8=
 github.com/jmespath/go-jmespath/internal/testify v1.5.1/go.mod h1:L3OGu8Wl2/fWfCI6z80xFu9LTZmf1ZRjMHUOPmWr69U=
-github.com/mojatter/io2 v0.8.0 h1:+3XfQWXJbaW+rhwqOU6jfT1SaIrkVrwQa1x4Gn8PFxY=
-github.com/mojatter/io2 v0.8.0/go.mod h1:xBjjy7Ze0tUKP01QPszDJF+MuHiwRO68FfLbKfyC+1Y=
-github.com/mojatter/wfs v0.4.0 h1:ixGEperDs0BHPN3oloQo3CAMcZupOQPPyJfafnCDrHc=
-github.com/mojatter/wfs v0.4.0/go.mod h1:3sOoC92je+QVLy++tSBXKQFu9WW3TjU7cYiD9seACPw=
+github.com/mojatter/wfs v0.5.0 h1:ewXtdNbc94skw2ipDWBWbEwg+QTlUtJUd3ujSj1hN7w=
+github.com/mojatter/wfs v0.5.0/go.mod h1:PlxShpeTA90XFUWkWWi9DmXG7tgFd4v64hPDqrf1n7c=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=

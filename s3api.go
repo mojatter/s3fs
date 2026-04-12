@@ -13,9 +13,18 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
-	"github.com/mojatter/io2"
 	"github.com/mojatter/wfs"
 )
+
+// lazyReadCloser is a simple io.ReadCloser backed by function delegates.
+// It replaces the former io2.Delegator dependency.
+type lazyReadCloser struct {
+	readFunc  func(p []byte) (int, error)
+	closeFunc func() error
+}
+
+func (rc *lazyReadCloser) Read(p []byte) (int, error)  { return rc.readFunc(p) }
+func (rc *lazyReadCloser) Close() error                { return rc.closeFunc() }
 
 const defaultMaxKeys = int64(1000)
 
@@ -54,22 +63,23 @@ func (api *fsS3api) GetObject(input *s3.GetObjectInput) (*s3.GetObjectOutput, er
 	}
 
 	var in io.ReadCloser
-	body := &io2.Delegator{}
-	body.ReadFunc = func(p []byte) (int, error) {
-		if in == nil {
-			var err error
-			in, err = api.fsys.Open(name)
-			if err != nil {
-				return 0, err
+	body := &lazyReadCloser{
+		readFunc: func(p []byte) (int, error) {
+			if in == nil {
+				var err error
+				in, err = api.fsys.Open(name)
+				if err != nil {
+					return 0, err
+				}
 			}
-		}
-		return in.Read(p)
-	}
-	body.CloseFunc = func() error {
-		if in != nil {
-			return in.Close()
-		}
-		return nil
+			return in.Read(p)
+		},
+		closeFunc: func() error {
+			if in != nil {
+				return in.Close()
+			}
+			return nil
+		},
 	}
 
 	return &s3.GetObjectOutput{
@@ -87,8 +97,11 @@ func (api *fsS3api) PutObject(input *s3.PutObjectInput) (*s3.PutObjectOutput, er
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-	io.Copy(f, input.Body)
+	defer func() { _ = f.Close() }()
+
+	if _, err := io.Copy(f, input.Body); err != nil {
+		return nil, err
+	}
 	return output, nil
 }
 
