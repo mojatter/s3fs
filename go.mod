@@ -3,7 +3,7 @@ module github.com/mojatter/s3fs
 go 1.24
 
 require (
-	github.com/aws/aws-sdk-go v1.45.15
+	github.com/aws/aws-sdk-go v1.55.8
 	github.com/mojatter/wfs v0.5.0
 )
 
