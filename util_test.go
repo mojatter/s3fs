@@ -5,8 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 func TestIsNotExist(t *testing.T) {
@@ -39,7 +38,7 @@ func TestIsS3NoSuchKey(t *testing.T) {
 		want bool
 	}{
 		{
-			err:  awserr.New(s3.ErrCodeNoSuchKey, "", nil),
+			err:  &s3types.NoSuchKey{},
 			want: true,
 		}, {
 			err:  fs.ErrNotExist,
@@ -63,7 +62,7 @@ func TestToPathError(t *testing.T) {
 		want error
 	}{
 		{
-			err:  awserr.New(s3.ErrCodeNoSuchKey, "", nil),
+			err:  &s3types.NoSuchKey{},
 			want: &fs.PathError{Op: op, Path: name, Err: fs.ErrNotExist},
 		}, {
 			err:  fs.ErrNotExist,
@@ -81,26 +80,26 @@ func TestToPathError(t *testing.T) {
 	}
 }
 
-func TestToS3NoSuckKeyIfNoExist(t *testing.T) {
+func TestToS3NoSuchKeyIfNoExist(t *testing.T) {
 	tests := []struct {
 		err  error
 		want error
 	}{
 		{
 			err:  fs.ErrNotExist,
-			want: awserr.New(s3.ErrCodeNoSuchKey, "", nil),
+			want: &s3types.NoSuchKey{},
 		}, {
 			err:  &fs.PathError{Err: fs.ErrNotExist},
-			want: awserr.New(s3.ErrCodeNoSuchKey, "", nil),
+			want: &s3types.NoSuchKey{},
 		}, {
 			err:  fs.ErrExist,
 			want: fs.ErrExist,
 		},
 	}
 	for _, test := range tests {
-		got := toS3NoSuckKeyIfNoExist(test.err)
+		got := toS3NoSuchKeyIfNoExist(test.err)
 		if got.Error() != test.want.Error() {
-			t.Errorf(`Error toS3NoSuckKeyIfNoExist(%v) returns %v; want %v`, test.err, got, test.want)
+			t.Errorf(`Error toS3NoSuchKeyIfNoExist(%v) returns %v; want %v`, test.err, got, test.want)
 		}
 	}
 }

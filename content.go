@@ -5,8 +5,8 @@ import (
 	"path"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 type content struct {
@@ -28,11 +28,11 @@ func newDirContent(prefix string) *content {
 	}
 }
 
-func newFileContent(o *s3.Object) *content {
+func newFileContent(o s3types.Object) *content {
 	return &content{
-		name:    path.Base(aws.StringValue(o.Key)),
-		size:    aws.Int64Value(o.Size),
-		modTime: aws.TimeValue(o.LastModified),
+		name:    path.Base(aws.ToString(o.Key)),
+		size:    aws.ToInt64(o.Size),
+		modTime: aws.ToTime(o.LastModified),
 	}
 }
 

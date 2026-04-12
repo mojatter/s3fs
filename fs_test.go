@@ -1,11 +1,12 @@
 package s3fs
 
 import (
+	"context"
 	"io/fs"
 	"testing"
 	"testing/fstest"
 
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/mojatter/wfs"
 	"github.com/mojatter/wfs/memfs"
 	"github.com/mojatter/wfs/osfs"
@@ -53,36 +54,36 @@ func newMockFSS3APITesting(t *testing.T) *mockFSS3API {
 	return api
 }
 
-func (m *mockFSS3API) GetObject(input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+func (m *mockFSS3API) GetObject(ctx context.Context, input *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
-	return m.fsS3api.GetObject(input)
+	return m.fsS3api.GetObject(ctx, input, optFns...)
 }
 
-func (m *mockFSS3API) PutObject(input *s3.PutObjectInput) (*s3.PutObjectOutput, error) {
+func (m *mockFSS3API) PutObject(ctx context.Context, input *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
-	return m.fsS3api.PutObject(input)
+	return m.fsS3api.PutObject(ctx, input, optFns...)
 }
 
-func (m *mockFSS3API) ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+func (m *mockFSS3API) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
-	return m.fsS3api.ListObjectsV2(input)
+	return m.fsS3api.ListObjectsV2(ctx, input, optFns...)
 }
 
 func TestFS(t *testing.T) {
-	fsys := NewWithAPI("testdata", newMockFSS3APITesting(t))
+	fsys := NewWithClient("testdata", newMockFSS3APITesting(t))
 	if err := fstest.TestFS(fsys, "dir0", "dir0/file01.txt"); err != nil {
 		t.Errorf("Error testing/fstest: %+v", err)
 	}
 }
 
 func TestWriteFileFS(t *testing.T) {
-	fsys := NewWithAPI("testdata", newMockFSS3APITesting(t))
+	fsys := NewWithClient("testdata", newMockFSS3APITesting(t))
 	tmpDir := "test"
 	if err := wfs.MkdirAll(fsys, tmpDir, fs.ModePerm); err != nil {
 		t.Fatal(err)
