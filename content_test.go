@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 func TestNewDirContent(t *testing.T) {
@@ -49,25 +49,26 @@ func TestNewDirContent(t *testing.T) {
 }
 
 func TestNewFileContent(t *testing.T) {
-	o := &s3.Object{
+	now := time.Now()
+	o := s3types.Object{
 		Key:          aws.String("file"),
 		Size:         aws.Int64(123),
-		LastModified: aws.Time(time.Now()),
+		LastModified: aws.Time(now),
 	}
 
 	got := fs.FileInfo(newFileContent(o))
 
-	if name := got.Name(); name != aws.StringValue(o.Key) {
-		t.Errorf("Error Name %s; want %s", name, aws.StringValue(o.Key))
+	if name := got.Name(); name != aws.ToString(o.Key) {
+		t.Errorf("Error Name %s; want %s", name, aws.ToString(o.Key))
 	}
-	if size := got.Size(); size != aws.Int64Value(o.Size) {
-		t.Errorf("Error Size %d; want %d", size, aws.Int64Value(o.Size))
+	if size := got.Size(); size != aws.ToInt64(o.Size) {
+		t.Errorf("Error Size %d; want %d", size, aws.ToInt64(o.Size))
 	}
 	if mode := got.Mode(); mode != fs.ModePerm {
 		t.Errorf("Error Mode %v; want %v", mode, fs.ModePerm)
 	}
-	if modTime := got.ModTime(); modTime != aws.TimeValue(o.LastModified) {
-		t.Errorf("Error ModTime %v; want %v", modTime, aws.TimeValue(o.LastModified))
+	if modTime := got.ModTime(); modTime != aws.ToTime(o.LastModified) {
+		t.Errorf("Error ModTime %v; want %v", modTime, aws.ToTime(o.LastModified))
 	}
 	if isDir := got.IsDir(); isDir {
 		t.Errorf("Error IsDir %v; want false", isDir)

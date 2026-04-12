@@ -9,8 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/mojatter/wfs"
 )
 
@@ -36,7 +37,7 @@ func TestGetObject(t *testing.T) {
 		Bucket: aws.String("testdata"),
 		Key:    aws.String("dir0/file01.txt"),
 	}
-	output, err := api.GetObject(input)
+	output, err := api.GetObject(t.Context(), input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,8 +51,8 @@ func TestGetObject(t *testing.T) {
 	if string(got) != string(want) {
 		t.Errorf(`Error Body %s; want %s`, got, want)
 	}
-	if aws.Int64Value(output.ContentLength) != info.Size() {
-		t.Errorf(`Error ContentLength %d; want %d`, output.ContentLength, info.Size())
+	if aws.ToInt64(output.ContentLength) != info.Size() {
+		t.Errorf(`Error ContentLength %d; want %d`, aws.ToInt64(output.ContentLength), info.Size())
 	}
 }
 
@@ -67,7 +68,7 @@ func TestGetObject_OutputBodyReadError(t *testing.T) {
 		Bucket: aws.String("testdata"),
 		Key:    aws.String("dir0/file01.txt"),
 	}
-	output, err := api.GetObject(input)
+	output, err := api.GetObject(t.Context(), input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +88,7 @@ func TestGetObject_OutputBodyClose(t *testing.T) {
 		Bucket: aws.String("testdata"),
 		Key:    aws.String("dir0/file01.txt"),
 	}
-	output, err := api.GetObject(input)
+	output, err := api.GetObject(t.Context(), input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +110,7 @@ func TestGetObject_StatError(t *testing.T) {
 		Bucket: aws.String("testdata"),
 		Key:    aws.String("dir0/file01.txt"),
 	}
-	_, gotErr := api.GetObject(input)
+	_, gotErr := api.GetObject(t.Context(), input)
 	if gotErr != wantErr {
 		t.Errorf(`Error GetObject error got %v; want %v`, gotErr, wantErr)
 	}
@@ -123,8 +124,8 @@ func TestGetObject_DirError(t *testing.T) {
 		Bucket: aws.String("testdata"),
 		Key:    aws.String("dir0"),
 	}
-	wantErr := toS3NoSuckKeyIfNoExist(fs.ErrNotExist)
-	_, gotErr := api.GetObject(input)
+	wantErr := toS3NoSuchKeyIfNoExist(fs.ErrNotExist)
+	_, gotErr := api.GetObject(t.Context(), input)
 	if !reflect.DeepEqual(gotErr, wantErr) {
 		t.Errorf(`Error GetObject error got %v; want %v`, gotErr, wantErr)
 	}
@@ -140,7 +141,7 @@ func TestPutObject(t *testing.T) {
 		Key:    aws.String("test.txt"),
 		Body:   bytes.NewReader(want),
 	}
-	_, err := api.PutObject(input)
+	_, err := api.PutObject(t.Context(), input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +174,7 @@ func TestPutObject_CreateFileError(t *testing.T) {
 		Key:    aws.String("test.txt"),
 		Body:   bytes.NewReader([]byte{}),
 	}
-	_, gotErr := api.PutObject(input)
+	_, gotErr := api.PutObject(t.Context(), input)
 	if gotErr != wantErr {
 		t.Errorf(`Error PutObject error got %v; want %v`, gotErr, wantErr)
 	}
@@ -181,7 +182,7 @@ func TestPutObject_CreateFileError(t *testing.T) {
 
 func TestListObjectV2(t *testing.T) {
 	fsys := newMemFSTesting(t)
-	limit := 1
+	limit := int32(1)
 	after := "dir0/file01.txt"
 	want := &s3.ListObjectsV2Output{
 		IsTruncated: aws.Bool(true),
@@ -190,7 +191,7 @@ func TestListObjectV2(t *testing.T) {
 		if err != nil || d.IsDir() {
 			return err
 		}
-		if len(want.Contents) >= limit {
+		if int32(len(want.Contents)) >= limit {
 			return fs.SkipDir
 		}
 		key := strings.TrimPrefix(p, "testdata/")
@@ -201,7 +202,7 @@ func TestListObjectV2(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		want.Contents = append(want.Contents, &s3.Object{
+		want.Contents = append(want.Contents, s3types.Object{
 			Key:          aws.String(key),
 			Size:         aws.Int64(info.Size()),
 			LastModified: aws.Time(info.ModTime()),
@@ -216,10 +217,10 @@ func TestListObjectV2(t *testing.T) {
 	input := &s3.ListObjectsV2Input{
 		Bucket:     aws.String("testdata"),
 		Prefix:     aws.String("dir0"),
-		MaxKeys:    aws.Int64(int64(limit)),
+		MaxKeys:    aws.Int32(limit),
 		StartAfter: aws.String(after),
 	}
-	got, err := api.ListObjectsV2(input)
+	got, err := api.ListObjectsV2(t.Context(), input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +248,7 @@ func TestListObjectV2_DirEntryInfoError(t *testing.T) {
 		Prefix:    aws.String("dir0"),
 		Delimiter: aws.String("/"),
 	}
-	_, gotErr := api.ListObjectsV2(input)
+	_, gotErr := api.ListObjectsV2(t.Context(), input)
 	if gotErr != wantErr {
 		t.Errorf(`Error ListObjectsV2 error got %v; want %v`, gotErr, wantErr)
 	}
@@ -255,7 +256,7 @@ func TestListObjectV2_DirEntryInfoError(t *testing.T) {
 
 func TestListObjectV2_Delimiter(t *testing.T) {
 	fsys := newMemFSTesting(t)
-	limit := 1
+	limit := int32(1)
 	after := "file0.txt"
 	want := &s3.ListObjectsV2Output{
 		IsTruncated: aws.Bool(true),
@@ -266,7 +267,7 @@ func TestListObjectV2_Delimiter(t *testing.T) {
 	}
 	for _, d := range ds {
 		if d.IsDir() {
-			want.CommonPrefixes = append(want.CommonPrefixes, &s3.CommonPrefix{
+			want.CommonPrefixes = append(want.CommonPrefixes, s3types.CommonPrefix{
 				Prefix: aws.String(d.Name()),
 			})
 			continue
@@ -278,12 +279,12 @@ func TestListObjectV2_Delimiter(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want.Contents = append(want.Contents, &s3.Object{
+		want.Contents = append(want.Contents, s3types.Object{
 			Key:          aws.String(info.Name()),
 			Size:         aws.Int64(info.Size()),
 			LastModified: aws.Time(info.ModTime()),
 		})
-		if len(want.Contents) >= limit {
+		if int32(len(want.Contents)) >= limit {
 			break
 		}
 	}
@@ -292,11 +293,11 @@ func TestListObjectV2_Delimiter(t *testing.T) {
 	input := &s3.ListObjectsV2Input{
 		Bucket:     aws.String("testdata"),
 		Prefix:     aws.String(""),
-		MaxKeys:    aws.Int64(int64(limit)),
+		MaxKeys:    aws.Int32(limit),
 		Delimiter:  aws.String("/"),
 		StartAfter: aws.String(after),
 	}
-	got, err := api.ListObjectsV2(input)
+	got, err := api.ListObjectsV2(t.Context(), input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +319,7 @@ func TestListObjectV2_Delimiter_ReadDirError(t *testing.T) {
 		Prefix:    aws.String(""),
 		Delimiter: aws.String("/"),
 	}
-	_, gotErr := api.ListObjectsV2(input)
+	_, gotErr := api.ListObjectsV2(t.Context(), input)
 	if gotErr != wantErr {
 		t.Errorf(`Error ListObjectsV2 error got %v; want %v`, gotErr, wantErr)
 	}
@@ -346,7 +347,7 @@ func TestListObjectV2_Delimiter_DirEntryInfoError(t *testing.T) {
 		Prefix:    aws.String(""),
 		Delimiter: aws.String("/"),
 	}
-	_, gotErr := api.ListObjectsV2(input)
+	_, gotErr := api.ListObjectsV2(t.Context(), input)
 	if gotErr != wantErr {
 		t.Errorf(`Error ListObjectsV2 error got %v; want %v`, gotErr, wantErr)
 	}

@@ -3,12 +3,20 @@ package s3fs
 import (
 	"errors"
 	"io/fs"
+	"math"
 	"path"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
+
+// toInt32 safely converts an int to int32, capping at math.MaxInt32.
+func toInt32(n int) int32 {
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(n) //nolint:gosec // overflow is handled by the cap above
+}
 
 func isNotExist(err error) bool {
 	if err == fs.ErrNotExist {
@@ -19,8 +27,8 @@ func isNotExist(err error) bool {
 }
 
 func isS3NoSuchKey(err error) bool {
-	var awsErr awserr.Error
-	return errors.As(err, &awsErr) && awsErr.Code() == s3.ErrCodeNoSuchKey
+	var noSuchKeyErr *s3types.NoSuchKey
+	return errors.As(err, &noSuchKeyErr)
 }
 
 func toPathError(err error, op, name string) error {
@@ -30,9 +38,9 @@ func toPathError(err error, op, name string) error {
 	return &fs.PathError{Op: op, Path: name, Err: err}
 }
 
-func toS3NoSuckKeyIfNoExist(err error) error {
+func toS3NoSuchKeyIfNoExist(err error) error {
 	if isNotExist(err) {
-		return awserr.New(s3.ErrCodeNoSuchKey, "", nil)
+		return &s3types.NoSuchKey{}
 	}
 	return err
 }

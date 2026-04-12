@@ -1,6 +1,7 @@
 package s3fs
 
 import (
+	"context"
 	"io"
 	"io/fs"
 	"path"
@@ -8,12 +9,24 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3iface"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/mojatter/wfs"
 )
+
+
+
+// S3API is the subset of the S3 client API used by this package.
+// *s3.Client satisfies this interface.
+type S3API interface {
+	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	ListObjectsV2(ctx context.Context, params *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
+	DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
+	DeleteObjects(ctx context.Context, params *s3.DeleteObjectsInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectsOutput, error)
+}
 
 const (
 	defaultDirOpenBufferSize = 100
@@ -27,9 +40,10 @@ type S3FS struct {
 	// ListBufferSize is the buffer size for listing objects that is used on
 	// ReadDir, Glob and RemoveAll. (Default 1000)
 	ListBufferSize int
-	api            s3iface.S3API
+	api            S3API
 	bucket         string
 	dir            string
+	ctx            context.Context
 }
 
 var (
@@ -44,35 +58,67 @@ var (
 )
 
 // New returns a filesystem for the tree of objects rooted at the specified bucket.
-// This function is the same as the following code.
-//
-//	NewWithSession(bucket, session.Must(
-//	  session.NewSessionWithOptions(
-//	    session.Options{SharedConfigState: session.SharedConfigEnable}
-//	  )
-//	))
+// The S3 client is lazily initialized on the first operation using the default
+// AWS configuration. Use WithClient or WithConfig to provide a client explicitly.
 func New(bucket string) *S3FS {
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		SharedConfigState: session.SharedConfigEnable,
-	}))
-	return NewWithSession(bucket, sess)
-}
-
-// NewWithSession returns a filesystem for the tree of objects rooted at the specified
-// bucket with the session.
-func NewWithSession(bucket string, sess *session.Session) *S3FS {
-	return NewWithAPI(bucket, s3.New(sess))
-}
-
-// NewWithAPI returns a filesystem for the tree of objects rooted at the specified
-// bucket with the s3 client.
-func NewWithAPI(bucket string, api s3iface.S3API) *S3FS {
 	return &S3FS{
 		DirOpenBufferSize: defaultDirOpenBufferSize,
 		ListBufferSize:    defaultListBufferSize,
-		api:               api,
 		bucket:            bucket,
 	}
+}
+
+// NewWithClient returns a filesystem for the tree of objects rooted at the
+// specified bucket with the given S3 client.
+//
+// Example:
+//
+//	cfg, err := config.LoadDefaultConfig(ctx)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	fsys := s3fs.NewWithClient(bucket, s3.NewFromConfig(cfg))
+func NewWithClient(bucket string, client S3API) *S3FS {
+	return New(bucket).WithClient(client)
+}
+
+// WithClient sets the S3 client to use for operations.
+func (fsys *S3FS) WithClient(client S3API) *S3FS {
+	fsys.api = client
+	return fsys
+}
+
+// WithConfig sets the S3 client from the given AWS configuration.
+func (fsys *S3FS) WithConfig(cfg aws.Config) *S3FS {
+	fsys.api = s3.NewFromConfig(cfg)
+	return fsys
+}
+
+// WithContext sets the context used for S3 operations and client initialization.
+func (fsys *S3FS) WithContext(ctx context.Context) *S3FS {
+	fsys.ctx = ctx
+	return fsys
+}
+
+// Context returns the context for S3 operations.
+// If no context has been set, it defaults to context.Background().
+func (fsys *S3FS) Context() context.Context {
+	if fsys.ctx == nil {
+		fsys.ctx = context.Background()
+	}
+	return fsys.ctx
+}
+
+// client returns the S3 API client, lazily initializing it if necessary.
+func (fsys *S3FS) client() (S3API, error) {
+	if fsys.api == nil {
+		cfg, err := awsconfig.LoadDefaultConfig(fsys.Context())
+		if err != nil {
+			return nil, err
+		}
+		fsys.api = s3.NewFromConfig(cfg)
+	}
+	return fsys.api, nil
 }
 
 func (fsys *S3FS) key(name string) string {
@@ -90,11 +136,15 @@ func (fsys *S3FS) openFile(name string) (*s3File, error) {
 	if name == "." || strings.HasSuffix(name, "/.") {
 		return nil, toPathError(fs.ErrNotExist, "Open", name)
 	}
+	api, err := fsys.client()
+	if err != nil {
+		return nil, toPathError(err, "Open", name)
+	}
 	input := &s3.GetObjectInput{
 		Bucket: aws.String(fsys.bucket),
 		Key:    aws.String(fsys.key(name)),
 	}
-	output, err := fsys.api.GetObject(input)
+	output, err := api.GetObject(fsys.Context(), input)
 	if err != nil {
 		return nil, toPathError(err, "Open", name)
 	}
@@ -145,8 +195,14 @@ func (fsys *S3FS) Sub(dir string) (fs.FS, error) {
 	if !fs.ValidPath(dir) {
 		return nil, toPathError(fs.ErrInvalid, "Sub", dir)
 	}
-	subFsys := NewWithAPI(fsys.bucket, fsys.api)
-	subFsys.dir = path.Join(fsys.dir, dir)
+	subFsys := &S3FS{
+		DirOpenBufferSize: fsys.DirOpenBufferSize,
+		ListBufferSize:    fsys.ListBufferSize,
+		api:               fsys.api,
+		bucket:            fsys.bucket,
+		dir:               path.Join(fsys.dir, dir),
+		ctx:               fsys.ctx,
+	}
 	return subFsys, nil
 }
 
@@ -202,31 +258,35 @@ func (fsys *S3FS) glob(dirs, patterns []string, matches []string) ([]string, err
 }
 
 func (fsys *S3FS) listForGlob(pattern string, dirOnly bool) ([]string, error) {
+	api, err := fsys.client()
+	if err != nil {
+		return nil, toPathError(err, "Glob", pattern)
+	}
 	input := &s3.ListObjectsV2Input{
 		Bucket:    aws.String(fsys.bucket),
 		Prefix:    aws.String(normalizePrefixPattern(fsys.dir, pattern)),
-		MaxKeys:   aws.Int64(int64(fsys.ListBufferSize)),
+		MaxKeys:   aws.Int32(toInt32(fsys.ListBufferSize)),
 		Delimiter: aws.String("/"),
 	}
 	var keys []string
 	for {
-		output, err := fsys.api.ListObjectsV2(input)
+		output, err := api.ListObjectsV2(fsys.Context(), input)
 		if err != nil {
 			return nil, toPathError(err, "Glob", pattern)
 		}
 		for _, p := range output.CommonPrefixes {
-			key := strings.TrimRight(fsys.rel(aws.StringValue(p.Prefix)), "/")
+			key := strings.TrimRight(fsys.rel(aws.ToString(p.Prefix)), "/")
 			keys = appendIfMatch(keys, key, pattern)
 		}
 		if dirOnly {
 			return keys, nil
 		}
 		for _, o := range output.Contents {
-			key := fsys.rel(aws.StringValue(o.Key))
+			key := fsys.rel(aws.ToString(o.Key))
 			keys = appendIfMatch(keys, key, pattern)
 			input.StartAfter = o.Key
 		}
-		if !aws.BoolValue(output.IsTruncated) {
+		if !aws.ToBool(output.IsTruncated) {
 			break
 		}
 	}
@@ -277,12 +337,15 @@ func (fsys *S3FS) WriteFile(name string, p []byte, mode fs.FileMode) (int, error
 
 // RemoveFile removes the specified named file.
 func (fsys *S3FS) RemoveFile(name string) error {
+	api, err := fsys.client()
+	if err != nil {
+		return toPathError(err, "RemoveFile", name)
+	}
 	input := &s3.DeleteObjectInput{
 		Bucket: aws.String(fsys.bucket),
 		Key:    aws.String(fsys.key(name)),
 	}
-	var err error
-	_, err = fsys.api.DeleteObject(input)
+	_, err = api.DeleteObject(fsys.Context(), input)
 	if err != nil {
 		return toPathError(err, "RemoveFile", name)
 	}
@@ -291,33 +354,35 @@ func (fsys *S3FS) RemoveFile(name string) error {
 
 // RemoveAll removes path and any children it contains.
 func (fsys *S3FS) RemoveAll(dir string) error {
+	api, err := fsys.client()
+	if err != nil {
+		return toPathError(err, "RemoveAll", dir)
+	}
 	input := &s3.ListObjectsV2Input{
 		Bucket:  aws.String(fsys.bucket),
 		Prefix:  aws.String(normalizePrefix(fsys.key(dir))),
-		MaxKeys: aws.Int64(int64(fsys.ListBufferSize)),
-	}
-	delInput := &s3.DeleteObjectsInput{
-		Bucket: aws.String(fsys.bucket),
-		Delete: &s3.Delete{Quiet: aws.Bool(true)},
+		MaxKeys: aws.Int32(toInt32(fsys.ListBufferSize)),
 	}
 	for {
-		output, err := fsys.api.ListObjectsV2(input)
+		output, err := api.ListObjectsV2(fsys.Context(), input)
 		if err != nil {
 			return toPathError(err, "RemoveAll", dir)
 		}
-		var ids []*s3.ObjectIdentifier
+		var ids []s3types.ObjectIdentifier
 		for _, o := range output.Contents {
-			ids = append(ids, &s3.ObjectIdentifier{Key: o.Key})
+			ids = append(ids, s3types.ObjectIdentifier{Key: o.Key})
 			input.StartAfter = o.Key
 		}
-		delInput.Delete.Objects = ids
 
-		_, err = fsys.api.DeleteObjects(delInput)
+		_, err = api.DeleteObjects(fsys.Context(), &s3.DeleteObjectsInput{
+			Bucket: aws.String(fsys.bucket),
+			Delete: &s3types.Delete{Quiet: aws.Bool(true), Objects: ids},
+		})
 		if err != nil {
 			return toPathError(err, "RemoveAll", dir)
 		}
 
-		if !*output.IsTruncated {
+		if !aws.ToBool(output.IsTruncated) {
 			break
 		}
 	}

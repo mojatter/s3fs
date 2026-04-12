@@ -1,6 +1,7 @@
 package s3fs
 
 import (
+	"context"
 	"errors"
 	"io"
 	"io/fs"
@@ -10,14 +11,13 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3iface"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/mojatter/wfs"
 )
 
 // lazyReadCloser is a simple io.ReadCloser backed by function delegates.
-// It replaces the former io2.Delegator dependency.
 type lazyReadCloser struct {
 	readFunc  func(p []byte) (int, error)
 	closeFunc func() error
@@ -26,10 +26,10 @@ type lazyReadCloser struct {
 func (rc *lazyReadCloser) Read(p []byte) (int, error)  { return rc.readFunc(p) }
 func (rc *lazyReadCloser) Close() error                { return rc.closeFunc() }
 
-const defaultMaxKeys = int64(1000)
+const defaultMaxKeys = int32(1000)
 
-func getMaxKeys(n *int64) int64 {
-	i := aws.Int64Value(n)
+func getMaxKeys(n *int32) int32 {
+	i := aws.ToInt32(n)
 	if i <= 0 {
 		return defaultMaxKeys
 	}
@@ -38,13 +38,12 @@ func getMaxKeys(n *int64) int64 {
 
 // fsS3api provides a simple implementation for mocking on test of s3fs package.
 type fsS3api struct {
-	s3iface.S3API
 	fsys fs.FS
 }
 
-var _ s3iface.S3API = (*fsS3api)(nil)
+var _ S3API = (*fsS3api)(nil)
 
-// newFsS3api returns a s3iface.S3API implementation on the provided filesystem.
+// newFsS3api returns a S3API implementation on the provided filesystem.
 func newFsS3api(fsys fs.FS) *fsS3api {
 	return &fsS3api{
 		fsys: fsys,
@@ -52,14 +51,14 @@ func newFsS3api(fsys fs.FS) *fsS3api {
 }
 
 // GetObject API operation for the filesystem.
-func (api *fsS3api) GetObject(input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
-	name := path.Join(aws.StringValue(input.Bucket), aws.StringValue(input.Key))
+func (api *fsS3api) GetObject(_ context.Context, input *s3.GetObjectInput, _ ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+	name := path.Join(aws.ToString(input.Bucket), aws.ToString(input.Key))
 	info, err := fs.Stat(api.fsys, name)
 	if err != nil {
-		return nil, toS3NoSuckKeyIfNoExist(err)
+		return nil, toS3NoSuchKeyIfNoExist(err)
 	}
 	if info.IsDir() {
-		return nil, toS3NoSuckKeyIfNoExist(fs.ErrNotExist)
+		return nil, toS3NoSuchKeyIfNoExist(fs.ErrNotExist)
 	}
 
 	var in io.ReadCloser
@@ -90,8 +89,8 @@ func (api *fsS3api) GetObject(input *s3.GetObjectInput) (*s3.GetObjectOutput, er
 }
 
 // PutObject API operation for the filesystem.
-func (api *fsS3api) PutObject(input *s3.PutObjectInput) (*s3.PutObjectOutput, error) {
-	name := path.Join(aws.StringValue(input.Bucket), aws.StringValue(input.Key))
+func (api *fsS3api) PutObject(_ context.Context, input *s3.PutObjectInput, _ ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
+	name := path.Join(aws.ToString(input.Bucket), aws.ToString(input.Key))
 	output := &s3.PutObjectOutput{}
 	f, err := wfs.CreateFile(api.fsys, name, fs.ModePerm)
 	if err != nil {
@@ -106,9 +105,9 @@ func (api *fsS3api) PutObject(input *s3.PutObjectInput) (*s3.PutObjectOutput, er
 }
 
 func (api *fsS3api) namePrefixes(dirPtr, prefixPtr *string) (string, string, error) {
-	prefix := aws.StringValue(prefixPtr)
+	prefix := aws.ToString(prefixPtr)
 	namePrefix := ""
-	dirWithPrefix := path.Join(aws.StringValue(dirPtr), prefix)
+	dirWithPrefix := path.Join(aws.ToString(dirPtr), prefix)
 	info, err := fs.Stat(api.fsys, dirWithPrefix)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
@@ -132,15 +131,15 @@ func (api *fsS3api) readDir(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Outp
 	if err != nil {
 		return nil, err
 	}
-	dir := path.Join(aws.StringValue(input.Bucket), prefix)
+	dir := path.Join(aws.ToString(input.Bucket), prefix)
 	entries, err := fs.ReadDir(api.fsys, dir)
 	if err != nil {
-		return nil, toS3NoSuckKeyIfNoExist(err)
+		return nil, toS3NoSuchKeyIfNoExist(err)
 	}
 
 	output := &s3.ListObjectsV2Output{}
 	limit := getMaxKeys(input.MaxKeys)
-	after := aws.StringValue(input.StartAfter)
+	after := aws.ToString(input.StartAfter)
 	limited := false
 	truncated := false
 
@@ -150,7 +149,7 @@ func (api *fsS3api) readDir(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Outp
 			continue
 		}
 		if entry.IsDir() {
-			output.CommonPrefixes = append(output.CommonPrefixes, &s3.CommonPrefix{
+			output.CommonPrefixes = append(output.CommonPrefixes, s3types.CommonPrefix{
 				Prefix: aws.String(name),
 			})
 			continue
@@ -164,14 +163,14 @@ func (api *fsS3api) readDir(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Outp
 		}
 		info, err := entry.Info()
 		if err != nil {
-			return nil, toS3NoSuckKeyIfNoExist(err)
+			return nil, toS3NoSuchKeyIfNoExist(err)
 		}
-		output.Contents = append(output.Contents, &s3.Object{
+		output.Contents = append(output.Contents, s3types.Object{
 			Key:          aws.String(name),
 			Size:         aws.Int64(info.Size()),
 			LastModified: aws.Time(info.ModTime()),
 		})
-		limited = (int64(len(output.Contents)) >= limit)
+		limited = (toInt32(len(output.Contents)) >= limit)
 	}
 
 	output.IsTruncated = aws.Bool(truncated)
@@ -183,10 +182,10 @@ func (api *fsS3api) walkDir(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Outp
 	if err != nil {
 		return nil, err
 	}
-	root := path.Join(aws.StringValue(input.Bucket), prefix)
+	root := path.Join(aws.ToString(input.Bucket), prefix)
 	output := &s3.ListObjectsV2Output{}
 	limit := getMaxKeys(input.MaxKeys)
-	after := aws.StringValue(input.StartAfter)
+	after := aws.ToString(input.StartAfter)
 	limited := false
 	truncated := false
 
@@ -197,7 +196,7 @@ func (api *fsS3api) walkDir(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Outp
 		if name == root || !strings.HasPrefix(name, namePrefix) || d.IsDir() {
 			return nil
 		}
-		name, err = filepath.Rel(aws.StringValue(input.Bucket), name)
+		name, err = filepath.Rel(aws.ToString(input.Bucket), name)
 		if err != nil {
 			return err
 		}
@@ -210,14 +209,14 @@ func (api *fsS3api) walkDir(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Outp
 		}
 		info, err := d.Info()
 		if err != nil {
-			return toS3NoSuckKeyIfNoExist(err)
+			return toS3NoSuchKeyIfNoExist(err)
 		}
-		output.Contents = append(output.Contents, &s3.Object{
+		output.Contents = append(output.Contents, s3types.Object{
 			Key:          aws.String(name),
 			Size:         aws.Int64(info.Size()),
 			LastModified: aws.Time(info.ModTime()),
 		})
-		limited = (int64(len(output.Contents)) >= limit)
+		limited = (toInt32(len(output.Contents)) >= limit)
 		return nil
 	})
 	if err != nil {
@@ -229,31 +228,29 @@ func (api *fsS3api) walkDir(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Outp
 }
 
 // ListObjectsV2 API operation for the filesystem.
-func (api *fsS3api) ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
-	if aws.StringValue(input.Delimiter) == "/" {
+func (api *fsS3api) ListObjectsV2(_ context.Context, input *s3.ListObjectsV2Input, _ ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+	if aws.ToString(input.Delimiter) == "/" {
 		return api.readDir(input)
 	}
 	return api.walkDir(input)
 }
 
 // DeleteObject API operation for the filesystem.
-func (api *fsS3api) DeleteObject(input *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error) {
-	name := path.Join(aws.StringValue(input.Bucket), aws.StringValue(input.Key))
+func (api *fsS3api) DeleteObject(_ context.Context, input *s3.DeleteObjectInput, _ ...func(*s3.Options)) (*s3.DeleteObjectOutput, error) {
+	name := path.Join(aws.ToString(input.Bucket), aws.ToString(input.Key))
 	if err := wfs.RemoveFile(api.fsys, name); err != nil {
-		return nil, toS3NoSuckKeyIfNoExist(err)
+		return nil, toS3NoSuchKeyIfNoExist(err)
 	}
 	return &s3.DeleteObjectOutput{}, nil
 }
 
 // DeleteObjects API operation for the filesystem.
-func (api *fsS3api) DeleteObjects(input *s3.DeleteObjectsInput) (*s3.DeleteObjectsOutput, error) {
-	dirs := map[string]interface{}{}
+func (api *fsS3api) DeleteObjects(_ context.Context, input *s3.DeleteObjectsInput, _ ...func(*s3.Options)) (*s3.DeleteObjectsOutput, error) {
 	for _, id := range input.Delete.Objects {
-		name := path.Join(aws.StringValue(input.Bucket), aws.StringValue(id.Key))
+		name := path.Join(aws.ToString(input.Bucket), aws.ToString(id.Key))
 		if err := wfs.RemoveFile(api.fsys, name); err != nil {
-			return nil, toS3NoSuckKeyIfNoExist(err)
+			return nil, toS3NoSuchKeyIfNoExist(err)
 		}
-		dirs[path.Dir(name)] = nil
 	}
 	return &s3.DeleteObjectsOutput{}, nil
 }

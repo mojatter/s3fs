@@ -6,8 +6,8 @@ import (
 	"sort"
 	"syscall"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 type s3Dir struct {
@@ -88,27 +88,31 @@ func (d *s3Dir) list(n int) ([]fs.DirEntry, error) {
 	if d.eof {
 		return nil, io.EOF
 	}
+	api, err := d.fsys.client()
+	if err != nil {
+		return nil, err
+	}
 	input := &s3.ListObjectsV2Input{
 		Bucket:     aws.String(d.fsys.bucket),
 		Prefix:     aws.String(d.prefix),
 		Delimiter:  aws.String("/"),
-		MaxKeys:    aws.Int64(int64(n)),
+		MaxKeys:    aws.Int32(toInt32(n)),
 		StartAfter: aws.String(d.after),
 	}
-	output, err := d.fsys.api.ListObjectsV2(input)
+	output, err := api.ListObjectsV2(d.fsys.Context(), input)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, p := range output.CommonPrefixes {
-		entries = append(entries, newDirContent(*p.Prefix))
-		d.after = *p.Prefix
+		entries = append(entries, newDirContent(aws.ToString(p.Prefix)))
+		d.after = aws.ToString(p.Prefix)
 	}
 	for _, o := range output.Contents {
 		entries = append(entries, newFileContent(o))
-		d.after = *o.Key
+		d.after = aws.ToString(o.Key)
 	}
-	d.eof = !*output.IsTruncated
+	d.eof = !aws.ToBool(output.IsTruncated)
 
 	return entries, nil
 }

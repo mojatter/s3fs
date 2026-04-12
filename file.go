@@ -6,8 +6,8 @@ import (
 	"io/fs"
 	"path"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/mojatter/wfs"
 )
 
@@ -25,8 +25,8 @@ func newS3File(key string, o *s3.GetObjectOutput) *s3File {
 	return &s3File{
 		content: &content{
 			name:    path.Base(key),
-			size:    aws.Int64Value(o.ContentLength),
-			modTime: aws.TimeValue(o.LastModified),
+			size:    aws.ToInt64(o.ContentLength),
+			modTime: aws.ToTime(o.LastModified),
 		},
 		buf: o.Body,
 	}
@@ -88,14 +88,17 @@ func (f *s3WriterFile) Close() error {
 	if f.buf == nil {
 		return toPathError(fs.ErrClosed, "Close", f.key)
 	}
+	api, err := f.fsys.client()
+	if err != nil {
+		return err
+	}
 	input := &s3.PutObjectInput{
 		Bucket: aws.String(f.fsys.bucket),
 		Key:    aws.String(f.fsys.key(f.key)),
 		Body:   bytes.NewReader(f.buf.Bytes()),
 	}
 	f.buf = nil
-	var err error
-	_, err = f.fsys.api.PutObject(input)
+	_, err = api.PutObject(f.fsys.Context(), input)
 	return err
 }
 
