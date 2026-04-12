@@ -23,6 +23,7 @@ import (
 type S3API interface {
 	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
 	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	CopyObject(ctx context.Context, params *s3.CopyObjectInput, optFns ...func(*s3.Options)) (*s3.CopyObjectOutput, error)
 	ListObjectsV2(ctx context.Context, params *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
 	DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
 	DeleteObjects(ctx context.Context, params *s3.DeleteObjectsInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectsOutput, error)
@@ -55,6 +56,7 @@ var (
 	_ fs.SubFS         = (*S3FS)(nil)
 	_ wfs.WriteFileFS  = (*S3FS)(nil)
 	_ wfs.RemoveFileFS = (*S3FS)(nil)
+	_ wfs.RenameFS     = (*S3FS)(nil)
 )
 
 // New returns a filesystem for the tree of objects rooted at the specified bucket.
@@ -333,6 +335,32 @@ func (fsys *S3FS) WriteFile(name string, p []byte, mode fs.FileMode) (int, error
 		return 0, toPathError(err, "Write", name)
 	}
 	return n, w.Close()
+}
+
+// Rename renames oldpath to newpath using S3 CopyObject followed by DeleteObject.
+func (fsys *S3FS) Rename(oldpath, newpath string) error {
+	api, err := fsys.client()
+	if err != nil {
+		return toPathError(err, "Rename", oldpath)
+	}
+	copySource := path.Join(fsys.bucket, fsys.key(oldpath))
+	_, err = api.CopyObject(fsys.Context(), &s3.CopyObjectInput{
+		Bucket:     aws.String(fsys.bucket),
+		Key:        aws.String(fsys.key(newpath)),
+		CopySource: aws.String(copySource),
+	})
+	if err != nil {
+		return toPathError(err, "Rename", oldpath)
+	}
+
+	_, err = api.DeleteObject(fsys.Context(), &s3.DeleteObjectInput{
+		Bucket: aws.String(fsys.bucket),
+		Key:    aws.String(fsys.key(oldpath)),
+	})
+	if err != nil {
+		return toPathError(err, "Rename", oldpath)
+	}
+	return nil
 }
 
 // RemoveFile removes the specified named file.
