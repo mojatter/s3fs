@@ -68,6 +68,13 @@ func (m *mockFSS3API) PutObject(ctx context.Context, input *s3.PutObjectInput, o
 	return m.fsS3api.PutObject(ctx, input, optFns...)
 }
 
+func (m *mockFSS3API) CopyObject(ctx context.Context, input *s3.CopyObjectInput, optFns ...func(*s3.Options)) (*s3.CopyObjectOutput, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.fsS3api.CopyObject(ctx, input, optFns...)
+}
+
 func (m *mockFSS3API) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
 	if m.err != nil {
 		return nil, m.err
@@ -89,6 +96,17 @@ func TestWriteFileFS(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := wfstest.TestWriteFileFS(fsys, tmpDir); err != nil {
+		t.Errorf("Error wfstest: %+v", err)
+	}
+}
+
+func TestRenameFS(t *testing.T) {
+	fsys := NewWithClient("testdata", newMockFSS3APITesting(t))
+	tmpDir := "test_rename"
+	if err := wfs.MkdirAll(fsys, tmpDir, fs.ModePerm); err != nil {
+		t.Fatal(err)
+	}
+	if err := wfstest.TestRenameFS(fsys, tmpDir); err != nil {
 		t.Errorf("Error wfstest: %+v", err)
 	}
 }

@@ -104,6 +104,29 @@ func (api *fsS3api) PutObject(_ context.Context, input *s3.PutObjectInput, _ ...
 	return output, nil
 }
 
+// CopyObject API operation for the filesystem.
+func (api *fsS3api) CopyObject(_ context.Context, input *s3.CopyObjectInput, _ ...func(*s3.Options)) (*s3.CopyObjectOutput, error) {
+	src := aws.ToString(input.CopySource)
+	dst := path.Join(aws.ToString(input.Bucket), aws.ToString(input.Key))
+
+	f, err := api.fsys.Open(src)
+	if err != nil {
+		return nil, toS3NoSuchKeyIfNoExist(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	w, err := wfs.CreateFile(api.fsys, dst, fs.ModePerm)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = w.Close() }()
+
+	if _, err := io.Copy(w, f); err != nil {
+		return nil, err
+	}
+	return &s3.CopyObjectOutput{}, nil
+}
+
 func (api *fsS3api) namePrefixes(dirPtr, prefixPtr *string) (string, string, error) {
 	prefix := aws.ToString(prefixPtr)
 	namePrefix := ""

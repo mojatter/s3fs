@@ -56,8 +56,8 @@ type s3WriterFile struct {
 }
 
 var (
-	_ wfs.WriterFile = (*s3WriterFile)(nil)
-	_ fs.FileInfo    = (*s3WriterFile)(nil)
+	_ wfs.SyncWriterFile = (*s3WriterFile)(nil)
+	_ fs.FileInfo        = (*s3WriterFile)(nil)
 )
 
 func newS3WriterFile(fsys *S3FS, key string) *s3WriterFile {
@@ -108,6 +108,12 @@ func (f *s3WriterFile) Read(p []byte) (int, error) {
 		return 0, &fs.PathError{Op: "Read", Path: f.key, Err: fs.ErrClosed}
 	}
 	return f.buf.Read(p)
+}
+
+// Sync is a no-op. S3 does not support partial flushes; the entire object
+// is written atomically on Close.
+func (f *s3WriterFile) Sync() error {
+	return nil
 }
 
 // Stat returns the fs.FileInfo of this file.
