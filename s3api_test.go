@@ -151,7 +151,10 @@ func TestPutObject(t *testing.T) {
 	}
 	defer f.Close()
 
-	got, err := io.ReadAll(f)
+	got, readErr := io.ReadAll(f)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
 	if string(got) != string(want) {
 		t.Errorf(`Error PutObject wrote %s; want %s`, got, want)
 	}

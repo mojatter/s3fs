@@ -12,8 +12,7 @@ import (
 func TestNewDirContent(t *testing.T) {
 	prefix := "dir"
 
-	var got fs.DirEntry
-	got = newDirContent(prefix)
+	got := fs.DirEntry(newDirContent(prefix))
 
 	if name := got.Name(); name != prefix {
 		t.Errorf("Error Name %s; want %s", name, prefix)
@@ -56,8 +55,7 @@ func TestNewFileContent(t *testing.T) {
 		LastModified: aws.Time(time.Now()),
 	}
 
-	var got fs.FileInfo
-	got = newFileContent(o)
+	got := fs.FileInfo(newFileContent(o))
 
 	if name := got.Name(); name != aws.StringValue(o.Key) {
 		t.Errorf("Error Name %s; want %s", name, aws.StringValue(o.Key))
