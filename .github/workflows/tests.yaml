@@ -35,7 +35,7 @@ jobs:
         if: matrix.go-version == 'stable'
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.11.4
+          version: v2.13.1
 
   # Aggregator job kept under the stable name "tests" so the branch
   # protection required check does not need to be reconfigured every
